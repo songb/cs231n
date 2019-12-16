@@ -513,35 +513,37 @@ def conv_forward_naive(x, w, b, conv_param):
     # TODO: Implement the convolutional forward pass.                         #
     # Hint: you can use the function np.pad for padding.                      #
     ###########################################################################
-    pad = conv_param['pad']
-    stride = conv_param['stride']
-    N, C, H, W = x.shape
-    F, C, FH, FW = w.shape
 
-    assert (H - FH + 2 * pad) % stride == 0
-    assert (W - FW + 2 * pad) % stride == 0
-    outH = 1 + (H - FH + 2 * pad) / stride
-    outW = 1 + (W - FW + 2 * pad) / stride
+    N = x.shape[0]
+    C = x.shape[1]
+    F = w.shape[0]
+    pad = conv_param.get('pad', 0)
+    stride = conv_param.get('stride', 1)
+    H = x.shape[2]
+    W = x.shape[3]
+    HH = w.shape[2]
+    WW = w.shape[3]
+    H2 = int(1 + (H+2*pad-HH)/stride)
+    W2 = int(1 + (W+2*pad-WW)/stride)
 
-    # create output tensor after convolution layer
-    out = np.zeros((N, F, outH, outW))
+    if pad>0:
+        x_pad = np.empty([N, C, H+2*pad, W+2*pad], dtype=x.dtype)
+        for i in range(N):
+            for j in range(C):
+                x_pad[i][j] = np.pad(x[i][j], pad, 'constant', constant_values=0)
+    else:
+        x_pad = x
 
-    # padding all input data
-    x_pad = np.pad(x, ((0, 0), (0, 0), (pad, pad), (pad, pad)), 'constant')
-    H_pad, W_pad = x_pad.shape[2], x_pad.shape[3]
+    out = np.empty([N, F, H2, W2], dtype=x.dtype)
 
-    # create w_row matrix
-    w_row = w.reshape(F, C * FH * FW)  # [F x C*FH*FW]
 
-    # create x_col matrix with values that each neuron is connected to
-    x_col = np.zeros((C * FH * FW, outH * outW))  # [C*FH*FW x H'*W']
-    for index in range(N):
-        neuron = 0
-        for i in range(0, H_pad - FH + 1, stride):
-            for j in range(0, W_pad - FW + 1, stride):
-                x_col[:, neuron] = x_pad[index, :, i:i + FH, j:j + FW].reshape(C * FH * FW)
-                neuron += 1
-        out[index] = (w_row.dot(x_col) + b.reshape(F, 1)).reshape(F, outH, outW)
+    for i in range(N):
+        for j in range(F):
+            for row in range(H2):
+                for column in range(W2):
+                    v = np.sum(x_pad[i, :, row*stride:row*stride + HH, column*stride:column*stride + WW] * w[j,:])+b[j]
+                    out[i, j, row, column] = v
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
