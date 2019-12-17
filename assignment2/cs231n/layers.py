@@ -568,10 +568,12 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the convolutional backward pass.                        #
     ###########################################################################
+
     x_pad, w, b, conv_param = cache
     N, F, outH, outW = dout.shape
     N, C, Hpad, Wpad = x_pad.shape
-    FH, FW = w.shape[2], w.shape[3]
+
+    WH, WW = w.shape[2], w.shape[3]
     stride = conv_param['stride']
     pad = conv_param['pad']
 
@@ -579,23 +581,23 @@ def conv_backward_naive(dout, cache):
     dx = np.zeros((N, C, Hpad - 2 * pad, Wpad - 2 * pad))
     dw, db = np.zeros(w.shape), np.zeros(b.shape)
 
-    # create w_row matrix
-    w_row = w.reshape(F, C * FH * FW)  # [F x C*FH*FW]
+    # each row is a filter map
+    w_row = w.reshape(F, -1)  # [F x C*WH*WW]
 
     # create x_col matrix with values that each neuron is connected to
-    x_col = np.zeros((C * FH * FW, outH * outW))  # [C*FH*FW x H'*W']
+    x_col = np.zeros((C * WH * WW, outH * outW))  # [C*FH*FW : H'*W']
     for index in range(N):
-        out_col = dout[index].reshape(F, outH * outW)  # [F x H'*W']
-        w_out = w_row.T.dot(out_col)  # [C*FH*FW x H'*W']
+        out_col = dout[index].reshape(F, outH * outW)  # [F : H'*W']
+        w_out = w_row.T.dot(out_col)  # [C*FH*FW : H'*W']
         dx_cur = np.zeros((C, Hpad, Wpad))
         neuron = 0
-        for i in range(0, Hpad - FH + 1, stride):
-            for j in range(0, Wpad - FW + 1, stride):
-                dx_cur[:, i:i + FH, j:j + FW] += w_out[:, neuron].reshape(C, FH, FW)
-                x_col[:, neuron] = x_pad[index, :, i:i + FH, j:j + FW].reshape(C * FH * FW)
+        for i in range(0, Hpad - WH + 1, stride):
+            for j in range(0, Wpad - WW + 1, stride):
+                dx_cur[:, i:i + WH, j:j + WW] += w_out[:, neuron].reshape(C, WH, WW)
+                x_col[:, neuron] = x_pad[index, :, i:i + WH, j:j + WW].reshape(C * WH * WW)
                 neuron += 1
         dx[index] = dx_cur[:, pad:-pad, pad:-pad]
-        dw += out_col.dot(x_col.T).reshape(F, C, FH, FW)
+        dw += out_col.dot(x_col.T).reshape(F, C, WH, WW)
         db += out_col.sum(axis=1)
     ###########################################################################
     #                             END OF YOUR CODE                            #
@@ -628,22 +630,18 @@ def max_pool_forward_naive(x, pool_param):
     ###########################################################################
     N, C, H, W = x.shape
     stride = pool_param['stride']
-    PH = pool_param['pool_height']
-    PW = pool_param['pool_width']
-    outH = 1 + (H - PH) / stride
-    outW = 1 + (W - PW) / stride
+    pool_height = pool_param['pool_height']
+    pool_width = pool_param['pool_width']
+    H2 = int(1+(H-pool_height)/stride)
+    W2 = int(1+(W-pool_width)/stride)
 
-    # create output tensor for pooling layer
-    out = np.zeros((N, C, outH, outW))
-    for index in range(N):
-        out_col = np.zeros((C, outH * outW))
-        neuron = 0
-        for i in range(0, H - PH + 1, stride):
-            for j in range(0, W - PW + 1, stride):
-                pool_region = x[index, :, i:i + PH, j:j + PW].reshape(C, PH * PW)
-                out_col[:, neuron] = pool_region.max(axis=1)
-                neuron += 1
-        out[index] = out_col.reshape(C, outH, outW)
+    out = np.empty([N,C,H2,W2])
+
+    for i in range(N):
+        for j in range(C):
+            for h in range(H2):
+                for w in range(W2):
+                    out[i,j,h,w] = np.max(x[i,j, h*stride:h*stride+pool_height, w*stride:w*stride+pool_width])
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
