@@ -29,6 +29,7 @@ def rnn_step_forward(x, prev_h, Wx, Wh, b):
     - cache: Tuple of values needed for the backward pass.
     """
     next_h, cache = None, None
+    cache = {}
     ##############################################################################
     # TODO: Implement a single forward step for the vanilla RNN. Store the next  #
     # hidden state and any values you need for the backward pass in the next_h   #
@@ -36,7 +37,14 @@ def rnn_step_forward(x, prev_h, Wx, Wh, b):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    next_h = np.tanh(x.dot(Wx) + prev_h.dot(Wh) + b)
+    cache['Wx'] = Wx
+    cache['Wh'] = Wh
+    cache['x'] = x
+    cache['prev_h'] = prev_h
+    cache['next_h'] = next_h  # N*H
+
+
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -68,8 +76,19 @@ def rnn_step_backward(dnext_h, cache):
     # of the output value from tanh.                                             #
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+    next_h = cache['next_h']
+    Wh = cache['Wh']
+    Wx = cache['Wx']
+    x = cache['x']
+    prev_h = cache['prev_h']
 
-    pass
+
+    dtanh = dnext_h * (1- next_h**2)  #N*H
+    db = dtanh.sum(axis=0)
+    dprev_h = dtanh.dot(Wh.T)
+    dWh = prev_h.T.dot(dtanh)
+    dx = dtanh.dot(Wx.T)
+    dWx = x.T.dot(dtanh)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -104,7 +123,15 @@ def rnn_forward(x, h0, Wx, Wh, b):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, T, D = x.shape
+    _, H = h0.shape
+    h = np.zeros((N, T, H))
+    prev_h = h0
+    cache = []
+    for i in range(T):
+        prev_h, cache_ = rnn_step_forward(x[:, i, :], prev_h, Wx, Wh, b)
+        h[:, i, :] = prev_h
+        cache.append(cache_)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -140,7 +167,23 @@ def rnn_backward(dh, cache):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N,T,H = dh.shape
+    _, D = cache[0]['x'].shape
+
+    dx = np.zeros([N,T,D])
+
+    dx_step, dh_step, dWx, dWh, db = rnn_step_backward(dh[:,T-1,:], cache[T-1])
+    dx[:, T-1, :] = dx_step
+
+    for i in range(T-2, -1, -1):
+        dx_step, dh_step, dWx_step, dWh_step, db_step = rnn_step_backward(dh[:, i, :]+dh_step, cache[i])
+        dx[:, i, :] = dx_step
+        dWx += dWx_step
+        dWh += dWh_step
+        db += db_step
+
+    dh0 = dh_step
+
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -172,7 +215,8 @@ def word_embedding_forward(x, W):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    out = W[x]
+    cache = (x, W)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -205,7 +249,9 @@ def word_embedding_backward(dout, cache):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    x, W = cache
+    dW = np.zeros(W.shape)
+    np.add.at(dW, x, dout)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################

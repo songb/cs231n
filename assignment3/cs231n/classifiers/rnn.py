@@ -142,7 +142,27 @@ class CaptioningRNN(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        initial_hidden_state = features.dot(W_proj)+b_proj                          #(N, H)
+        word_vec, word_cache = word_embedding_forward(captions_in, W_embed)                     #(N, T, W)
+        hidden_states, rnn_cache = rnn_forward(word_vec, initial_hidden_state, Wx, Wh, b)      #(N, T, H)
+        score_timesteps, temp_cache = temporal_affine_forward(hidden_states, W_vocab, b_vocab)  #(N, T, V)
+        loss, dscore = temporal_softmax_loss(score_timesteps, captions_out, mask)
+
+        d_hidden_state, dW_vocab, db_vocab = temporal_affine_backward(dscore, temp_cache)
+        dword_vec, dinitial_hidden_state, dWx, dWh, db = rnn_backward(d_hidden_state, rnn_cache)
+        dW_embed = word_embedding_backward(dword_vec, word_cache)
+        db_proj = dinitial_hidden_state.sum(axis=0)
+        dW_proj = features.T.dot(dinitial_hidden_state)
+
+        grads['W_embed'] = dW_embed
+        grads['W_proj'] = dW_proj
+        grads['b_proj'] = db_proj
+        grads['Wx'] = dWx
+        grads['Wh'] = dWh
+        grads['b'] = db
+        grads['W_vocab'] = dW_vocab
+        grads['b_vocab'] = db_vocab
+
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -211,10 +231,53 @@ class CaptioningRNN(object):
         ###########################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        hidden_state = features.dot(W_proj)+b_proj
+        V, W = W_embed.shape
+        x = np.ones((N, W)) * W_embed[self._start]  # N*W
+        for i in range(max_length):
+            hidden_state, _ = rnn_step_forward(x, hidden_state, Wx, Wh, b)  # N*H
+            all_word_score = hidden_state.dot(W_vocab) + b_vocab  #N*V
+            captions[:, i] = np.argmax(all_word_score, axis=1)
+            x = W_embed[captions[:, i]]
+
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
         return captions
+
+from cs231n.coco_utils import *
+from cs231n.captioning_solver import CaptioningSolver
+
+small_data = load_coco_data(max_train=50)
+data = load_coco_data(pca_features=True)
+
+small_rnn_model = CaptioningRNN(
+          cell_type='rnn',
+          word_to_idx=data['word_to_idx'],
+          input_dim=data['train_features'].shape[1],
+          hidden_dim=512,
+          wordvec_dim=256,
+        )
+
+small_rnn_solver = CaptioningSolver(small_rnn_model, small_data,
+           update_rule='adam',
+           num_epochs=50,
+           batch_size=25,
+           optim_config={
+             'learning_rate': 5e-3,
+           },
+           lr_decay=0.95,
+           verbose=True, print_every=10,
+         )
+
+small_rnn_solver.train()
+
+for split in ['train', 'val']:
+    minibatch = sample_coco_minibatch(small_data, split=split, batch_size=2)
+    gt_captions, features, urls = minibatch
+    gt_captions = decode_captions(gt_captions, data['idx_to_word'])
+
+    sample_captions = small_rnn_model.sample(features)
+    sample_captions = decode_captions(sample_captions, data['idx_to_word'])
