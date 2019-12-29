@@ -2,7 +2,6 @@ from __future__ import print_function, division
 from builtins import range
 import numpy as np
 
-
 """
 This file defines layer types that are commonly used for recurrent neural
 networks.
@@ -44,8 +43,6 @@ def rnn_step_forward(x, prev_h, Wx, Wh, b):
     cache['prev_h'] = prev_h
     cache['next_h'] = next_h  # N*H
 
-
-
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
     #                               END OF YOUR CODE                             #
@@ -82,8 +79,7 @@ def rnn_step_backward(dnext_h, cache):
     x = cache['x']
     prev_h = cache['prev_h']
 
-
-    dtanh = dnext_h * (1- next_h**2)  #N*H
+    dtanh = dnext_h * (1 - next_h ** 2)  # N*H
     db = dtanh.sum(axis=0)
     dprev_h = dtanh.dot(Wh.T)
     dWh = prev_h.T.dot(dtanh)
@@ -167,23 +163,22 @@ def rnn_backward(dh, cache):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    N,T,H = dh.shape
+    N, T, H = dh.shape
     _, D = cache[0]['x'].shape
 
-    dx = np.zeros([N,T,D])
+    dx = np.zeros([N, T, D])
 
-    dx_step, dh_step, dWx, dWh, db = rnn_step_backward(dh[:,T-1,:], cache[T-1])
-    dx[:, T-1, :] = dx_step
+    dx_step, dh_step, dWx, dWh, db = rnn_step_backward(dh[:, T - 1, :], cache[T - 1])
+    dx[:, T - 1, :] = dx_step
 
-    for i in range(T-2, -1, -1):
-        dx_step, dh_step, dWx_step, dWh_step, db_step = rnn_step_backward(dh[:, i, :]+dh_step, cache[i])
+    for i in range(T - 2, -1, -1):
+        dx_step, dh_step, dWx_step, dWh_step, db_step = rnn_step_backward(dh[:, i, :] + dh_step, cache[i])
         dx[:, i, :] = dx_step
         dWx += dWx_step
         dWh += dWh_step
         db += db_step
 
     dh0 = dh_step
-
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -302,8 +297,28 @@ def lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b):
     # You may want to use the numerically stable sigmoid implementation above.  #
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+    cache = {}
+    H = len(prev_h[0])
+    a = x.dot(Wx) + prev_h.dot(Wh) + b  # N*4H
+    i = sigmoid(a[:, :H])   # N*H
+    f = sigmoid(a[:, H:2 * H])
+    o = sigmoid(a[:, 2 * H:3 * H])
+    g = np.tanh(a[:, 3 * H:4 * H])
 
-    pass
+    next_c = f * prev_c + i * g
+    tanh_c = np.tanh(next_c)
+    next_h = o * tanh_c
+
+    cache['o'] = o
+    cache['g'] = g
+    cache['i'] = i
+    cache['f'] = f
+    cache['Wx'] = Wx
+    cache['Wh'] = Wh
+    cache['b'] = b
+    cache['x'] = x
+    cache['tanh_c'] = tanh_c
+    cache['prev_c'] = prev_c
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -339,7 +354,41 @@ def lstm_step_backward(dnext_h, dnext_c, cache):
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    o = cache['o']
+    g = cache['g']
+    i = cache['i']
+    f = cache['f']
+    Wx = cache['Wx']
+    Wh = cache['Wh']
+    b = cache['b']
+    x = cache['x']
+    tanh_c = cache['tanh_c']
+
+    N,H = o.shape
+
+    do = dnext_h * tanh_c
+    dnext_h_portion = o * dnext_h * (1 - tanh_c**2)
+    dcombined = dnext_h_portion + dnext_c
+    df = dcombined * prev_c
+    dprev_c = dcombined * f
+    di = g * dcombined
+    dg = i * dcombined
+    dWg = dg*(1 - g*g)
+    dWi = di * (i*(1-i))
+    dWo = do * (o*(1-o))
+    dWf = df * (f*(1-f))
+    da = np.zeros((N, 4*H))
+    da[:, :H] = dWi
+    da[:, H:2*H] = dWf
+    da[:, 2*H:3*H] = dWo
+    da[:, 3*H:4*H] = dWg
+
+    db = np.sum(da, axis=0)
+    dWx = x.T.dot(da)
+    dWh = prev_h.T.dot(da)
+    dprev_h = da.dot(Wh.T)
+    dx = da.dot(Wx.T)
+
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -513,3 +562,45 @@ def temporal_softmax_loss(x, y, mask, verbose=False):
     dx = dx_flat.reshape(N, T, V)
 
     return loss, dx
+
+
+from cs231n.gradient_check import *
+np.random.seed(231)
+
+N, D, H = 4, 5, 6
+x = np.random.randn(N, D)
+prev_h = np.random.randn(N, H)
+prev_c = np.random.randn(N, H)
+Wx = np.random.randn(D, 4 * H)
+Wh = np.random.randn(H, 4 * H)
+b = np.random.randn(4 * H)
+
+next_h, next_c, cache = lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)
+
+dnext_h = np.random.randn(*next_h.shape)
+dnext_c = np.random.randn(*next_c.shape)
+
+fx_h = lambda x: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[0]
+fh_h = lambda h: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[0]
+fc_h = lambda c: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[0]
+fWx_h = lambda Wx: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[0]
+fWh_h = lambda Wh: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[0]
+fb_h = lambda b: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[0]
+
+fx_c = lambda x: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[1]
+fh_c = lambda h: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[1]
+fc_c = lambda c: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[1]
+fWx_c = lambda Wx: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[1]
+fWh_c = lambda Wh: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[1]
+fb_c = lambda b: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[1]
+
+num_grad = eval_numerical_gradient_array
+
+dx_num = num_grad(fx_h, x, dnext_h) + num_grad(fx_c, x, dnext_c)
+dh_num = num_grad(fh_h, prev_h, dnext_h) + num_grad(fh_c, prev_h, dnext_c)
+dc_num = num_grad(fc_h, prev_c, dnext_h) + num_grad(fc_c, prev_c, dnext_c)
+dWx_num = num_grad(fWx_h, Wx, dnext_h) + num_grad(fWx_c, Wx, dnext_c)
+dWh_num = num_grad(fWh_h, Wh, dnext_h) + num_grad(fWh_c, Wh, dnext_c)
+db_num = num_grad(fb_h, b, dnext_h) + num_grad(fb_c, b, dnext_c)
+
+dx, dh, dc, dWx, dWh, db = lstm_step_backward(dnext_h, dnext_c, cache)
