@@ -300,7 +300,7 @@ def lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b):
     cache = {}
     H = len(prev_h[0])
     a = x.dot(Wx) + prev_h.dot(Wh) + b  # N*4H
-    i = sigmoid(a[:, :H])   # N*H
+    i = sigmoid(a[:, :H])  # N*H
     f = sigmoid(a[:, H:2 * H])
     o = sigmoid(a[:, 2 * H:3 * H])
     g = np.tanh(a[:, 3 * H:4 * H])
@@ -319,6 +319,7 @@ def lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b):
     cache['x'] = x
     cache['tanh_c'] = tanh_c
     cache['prev_c'] = prev_c
+    cache['prev_h'] = prev_h
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -363,32 +364,33 @@ def lstm_step_backward(dnext_h, dnext_c, cache):
     b = cache['b']
     x = cache['x']
     tanh_c = cache['tanh_c']
+    prev_c = cache['prev_c']
+    prev_h = cache['prev_h']
 
-    N,H = o.shape
+    N, H = o.shape
 
     do = dnext_h * tanh_c
-    dnext_h_portion = o * dnext_h * (1 - tanh_c**2)
+    dnext_h_portion = o * dnext_h * (1 - tanh_c ** 2)
     dcombined = dnext_h_portion + dnext_c
     df = dcombined * prev_c
     dprev_c = dcombined * f
     di = g * dcombined
     dg = i * dcombined
-    dWg = dg*(1 - g*g)
-    dWi = di * (i*(1-i))
-    dWo = do * (o*(1-o))
-    dWf = df * (f*(1-f))
-    da = np.zeros((N, 4*H))
+    dWg = dg * (1 - g * g)
+    dWi = di * (i * (1 - i))
+    dWo = do * (o * (1 - o))
+    dWf = df * (f * (1 - f))
+    da = np.zeros((N, 4 * H))
     da[:, :H] = dWi
-    da[:, H:2*H] = dWf
-    da[:, 2*H:3*H] = dWo
-    da[:, 3*H:4*H] = dWg
+    da[:, H:2 * H] = dWf
+    da[:, 2 * H:3 * H] = dWo
+    da[:, 3 * H:4 * H] = dWg
 
     db = np.sum(da, axis=0)
     dWx = x.T.dot(da)
     dWh = prev_h.T.dot(da)
     dprev_h = da.dot(Wh.T)
     dx = da.dot(Wx.T)
-
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -427,7 +429,17 @@ def lstm_forward(x, h0, Wx, Wh, b):
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, T, D = x.shape
+    _, H = h0.shape
+    h = np.zeros((N, T, H))
+    cache = []
+    cell = np.zeros((N, H))
+    hidden = h0
+    for i in range(T):
+        step_x = x[:, i, :].reshape(N, -1)
+        hidden, cell, step_cache = lstm_step_forward(step_x, hidden, cell, Wx, Wh, b)
+        cache.append(step_cache)
+        h[:, i, :] = hidden
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -459,7 +471,27 @@ def lstm_backward(dh, cache):
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, T, H = dh.shape
+    _, D = cache[0]['x'].shape
+    step_dprev_h = np.zeros((N, H))
+    step_dprev_c = np.zeros((N, H))
+    dx = np.zeros((N, T, D))
+    dh0 = np.zeros((N, H))
+    dWx = np.zeros((D, 4 * H))
+    dWh = np.zeros((H, 4 * H))
+    db = np.zeros((4 * H))
+
+    for i in range(T-1, -1, -1):
+        dnext_h = dh[:, i, :]
+        step_dx, step_dprev_h, step_dprev_c, step_dWx, step_dWh, step_db = \
+            lstm_step_backward(dnext_h + step_dprev_h, step_dprev_c, cache[i])
+        dx[:, i, :] = step_dx
+        dh0 = step_dprev_h
+        dWx += step_dWx
+        dWh += step_dWh
+        db += step_db
+
+
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -563,44 +595,3 @@ def temporal_softmax_loss(x, y, mask, verbose=False):
 
     return loss, dx
 
-
-from cs231n.gradient_check import *
-np.random.seed(231)
-
-N, D, H = 4, 5, 6
-x = np.random.randn(N, D)
-prev_h = np.random.randn(N, H)
-prev_c = np.random.randn(N, H)
-Wx = np.random.randn(D, 4 * H)
-Wh = np.random.randn(H, 4 * H)
-b = np.random.randn(4 * H)
-
-next_h, next_c, cache = lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)
-
-dnext_h = np.random.randn(*next_h.shape)
-dnext_c = np.random.randn(*next_c.shape)
-
-fx_h = lambda x: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[0]
-fh_h = lambda h: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[0]
-fc_h = lambda c: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[0]
-fWx_h = lambda Wx: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[0]
-fWh_h = lambda Wh: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[0]
-fb_h = lambda b: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[0]
-
-fx_c = lambda x: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[1]
-fh_c = lambda h: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[1]
-fc_c = lambda c: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[1]
-fWx_c = lambda Wx: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[1]
-fWh_c = lambda Wh: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[1]
-fb_c = lambda b: lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b)[1]
-
-num_grad = eval_numerical_gradient_array
-
-dx_num = num_grad(fx_h, x, dnext_h) + num_grad(fx_c, x, dnext_c)
-dh_num = num_grad(fh_h, prev_h, dnext_h) + num_grad(fh_c, prev_h, dnext_c)
-dc_num = num_grad(fc_h, prev_c, dnext_h) + num_grad(fc_c, prev_c, dnext_c)
-dWx_num = num_grad(fWx_h, Wx, dnext_h) + num_grad(fWx_c, Wx, dnext_c)
-dWh_num = num_grad(fWh_h, Wh, dnext_h) + num_grad(fWh_c, Wh, dnext_c)
-db_num = num_grad(fb_h, b, dnext_h) + num_grad(fb_c, b, dnext_c)
-
-dx, dh, dc, dWx, dWh, db = lstm_step_backward(dnext_h, dnext_c, cache)
