@@ -234,7 +234,7 @@ def load_models(models_dir):
     return models
 
 
-def load_imagenet_val(num=None):
+def load_imagenet_val(num=None, imagenet_fn=None):
     """Load a handful of validation images from ImageNet.
 
     Inputs:
@@ -245,7 +245,8 @@ def load_imagenet_val(num=None):
     - y: numpy array of integer image labels, shape [num]
     - class_names: dict mapping integer label to class name
     """
-    imagenet_fn = 'cs231n/datasets/imagenet_val_25.npz'
+    if not imagenet_fn:
+        imagenet_fn = 'cs231n/datasets/imagenet_val_25.npz'
     if not os.path.isfile(imagenet_fn):
       print('file %s not found' % imagenet_fn)
       print('Run the following:')
